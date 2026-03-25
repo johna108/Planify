@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Authenticating...</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f8fafc;
+      color: #334155;
+    }
+    .container {
+      text-align: center;
+      padding: 2rem;
+      background: white;
+      border-radius: 1rem;
+      box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+    }
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-radius: 50%;
+      border-top: 3px solid #4f46e5;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 1rem;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="spinner"></div>
+    <p>Authentication successful. Completing sign in...</p>
+    <p style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;">This window should close automatically.</p>
+  </div>
+  <script>
+    if (window.opener) {
+      window.opener.postMessage({ 
+        type: 'SUPABASE_AUTH_SUCCESS', 
+        hash: window.location.hash 
+      }, '*');
+      setTimeout(() => window.close(), 500);
+    } else {
+      window.location.href = '/';
+    }
+  </script>
+</body>
+</html>
