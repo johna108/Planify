@@ -12,16 +12,23 @@ export function Auth() {
 
   useEffect(() => {
     const handleMessage = async (event: MessageEvent) => {
-      // Allow messages from the AI Studio preview domain or localhost
-      if (!event.origin.endsWith('.run.app') && !event.origin.includes('localhost')) return;
+      console.log('[Auth] Message received:', { origin: event.origin, type: event.data?.type });
+      
+      // Allow messages from the same origin only
+      if (event.origin !== window.location.origin && !event.origin.includes('localhost')) {
+        console.log('[Auth] Message blocked, origin mismatch');
+        return;
+      }
       
       if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
+        console.log('[Auth] Processing auth success');
         const hash = event.data.hash;
         if (hash) {
           const params = new URLSearchParams(hash.substring(1));
           const access_token = params.get('access_token');
           const refresh_token = params.get('refresh_token');
           if (access_token && refresh_token) {
+            console.log('[Auth] Setting session with tokens');
             await supabase.auth.setSession({ access_token, refresh_token });
           }
         }
@@ -36,23 +43,32 @@ export function Auth() {
       setLoading(true);
       setError(null);
       
+      console.log('[Auth] Starting Google OAuth flow');
+      const redirectUrl = `${window.location.origin}/auth/callback`;
+      console.log('[Auth] Redirect URL:', redirectUrl);
+      
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback.html`,
+          redirectTo: redirectUrl,
           skipBrowserRedirect: true,
         }
       });
       
-      if (error) throw error;
+      if (error) {
+        console.error('[Auth] OAuth error:', error);
+        throw error;
+      }
       
       if (data?.url) {
+        console.log('[Auth] Opening OAuth popup');
         const authWindow = window.open(data.url, 'oauth_popup', 'width=600,height=700');
         if (!authWindow) {
           setError('Please allow popups for this site to sign in with Google.');
         }
       }
     } catch (err: any) {
+      console.error('[Auth] Google login error:', err);
       setError(err.message || 'An error occurred during Google authentication');
     } finally {
       setLoading(false);

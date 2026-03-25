@@ -42,12 +42,25 @@
     <p style="font-size: 0.875rem; color: #64748b; margin-top: 0.5rem;">This window should close automatically.</p>
   </div>
   <script>
+    console.log('[Callback] OAuth callback received');
+    console.log('[Callback] Window hash:', window.location.hash);
+    console.log('[Callback] Has opener:', !!window.opener);
+    
     if (window.opener) {
-      window.opener.postMessage({ 
-        type: 'SUPABASE_AUTH_SUCCESS', 
-        hash: window.location.hash 
-      }, '*');
-      setTimeout(() => window.close(), 500);
+      console.log('[Callback] Posting auth message to opener');
+      try {
+        window.opener.postMessage({ 
+          type: 'SUPABASE_AUTH_SUCCESS', 
+          hash: window.location.hash 
+        }, window.location.origin);
+        console.log('[Callback] Message posted successfully');
+      } catch (err) {
+        console.error('[Callback] Error posting message:', err);
+      }
+      setTimeout(() => {
+        console.log('[Callback] Closing popup');
+        window.close();
+      }, 500);
     } else {
       window.location.href = '/';
     }
