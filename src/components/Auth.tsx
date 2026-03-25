@@ -20,18 +20,10 @@ export function Auth() {
         return;
       }
       
+      // Legacy message-based auth (if still needed for some flows)
       if (event.data?.type === 'SUPABASE_AUTH_SUCCESS') {
-        console.log('[Auth] Processing auth success');
-        const hash = event.data.hash;
-        if (hash) {
-          const params = new URLSearchParams(hash.substring(1));
-          const access_token = params.get('access_token');
-          const refresh_token = params.get('refresh_token');
-          if (access_token && refresh_token) {
-            console.log('[Auth] Setting session with tokens');
-            await supabase.auth.setSession({ access_token, refresh_token });
-          }
-        }
+        console.log('[Auth] Processing legacy auth success');
+        // Auth state will be updated via onAuthStateChange listener
       }
     };
     window.addEventListener('message', handleMessage);
@@ -44,14 +36,14 @@ export function Auth() {
       setError(null);
       
       console.log('[Auth] Starting Google OAuth flow');
-      const redirectUrl = `${window.location.origin}/auth/callback`;
+      const redirectUrl = window.location.origin; // Redirect to root instead of /auth/callback
       console.log('[Auth] Redirect URL:', redirectUrl);
       
       const { data, error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: redirectUrl,
-          skipBrowserRedirect: true,
+          skipBrowserRedirect: false, // Let Supabase handle the redirect to root
         }
       });
       

@@ -170,8 +170,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   useEffect(() => {
+    console.log('[AppContext] Initializing auth, checking hash');
+    
+    // Check if we're coming back from OAuth callback (hash contains session)
+    if (window.location.hash) {
+      console.log('[AppContext] Hash detected:', window.location.hash.substring(0, 50) + '...');
+    }
+
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('[AppContext] Initial session:', session?.user?.email ? `${session.user.email}` : 'null');
       setState(prev => ({ ...prev, user: session?.user ?? null }));
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -182,6 +190,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      console.log('[AppContext] Auth state changed, event:', _event, 'user:', session?.user?.email ?? 'null');
       setState(prev => ({ ...prev, user: session?.user ?? null }));
       if (session?.user) {
         fetchProfile(session.user.id);
