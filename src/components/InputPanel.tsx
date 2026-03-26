@@ -93,21 +93,22 @@ export function InputPanel() {
 
   return (
     <div className="rounded-xl border border-stone-200 bg-white p-4">
-      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-stone-900">
+      <h2 className="mb-2 flex items-center gap-2 text-base font-semibold text-stone-900">
         <span className="rounded-md bg-stone-100 p-1.5 text-stone-700">
           <Send size={18} />
         </span>
-        Smart Input
+        Add tasks
       </h2>
-      <form onSubmit={handleSubmit} className="relative">
+      <p className="mb-3 text-xs text-stone-500">Paste notes or type tasks in plain language.</p>
+      <form onSubmit={handleSubmit}>
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Paste messy notes, chat logs, or tasks here... e.g., 'Assignment due Friday, meeting at 5 PM, study ML chapter 3'"
+          placeholder="Example: Submit assignment Friday 5pm, call Alex tomorrow, review chapter 3"
           className="min-h-[120px] w-full resize-none rounded-lg border border-stone-300 p-3 text-sm text-stone-700 placeholder:text-stone-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
           disabled={state.isProcessing}
         />
-        <div className="absolute bottom-3 right-3 flex items-center gap-2">
+        <div className="mt-3 flex items-center justify-end gap-2">
           <button
             type="submit"
             disabled={!input.trim() || state.isProcessing}
@@ -120,7 +121,7 @@ export function InputPanel() {
               </>
             ) : (
               <>
-                Execute
+                Process
                 <Send size={16} />
               </>
             )}

@@ -825,7 +825,7 @@ export function GoogleCalendarView() {
 
   const shellClassName = isMaximized
     ? "fixed inset-4 z-50 bg-white rounded-2xl border border-slate-300 shadow-2xl flex flex-col"
-    : "h-full min-h-[460px] max-h-[900px] bg-white rounded-xl border border-slate-300 shadow-sm flex flex-col resize-y overflow-hidden";
+    : "h-full w-full bg-transparent rounded-none border-0 shadow-none flex flex-col overflow-hidden";
 
   return (
     <>

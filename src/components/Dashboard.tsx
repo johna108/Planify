@@ -114,8 +114,8 @@ export function Dashboard({ pathname, onNavigate }: DashboardProps) {
           </aside>
 
           <main className="rounded-2xl border border-stone-200 bg-white p-4 lg:p-5 overflow-hidden">
-            <div className="mb-3 flex items-center justify-between gap-2 border-b border-stone-200 pb-3 lg:hidden">
-              <div className="flex items-center gap-2 overflow-x-auto">
+            <div className="mb-3 flex flex-col gap-2 border-b border-stone-200 pb-3 sm:flex-row sm:items-center sm:justify-between lg:hidden">
+              <div className="min-w-0 flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
                 <SidebarItem
                   icon={<LayoutDashboard size={14} />}
                   label="Dashboard"
@@ -138,7 +138,7 @@ export function Dashboard({ pathname, onNavigate }: DashboardProps) {
                   compact
                 />
               </div>
-              <div className="flex items-center gap-1">
+              <div className="flex items-center gap-1 self-end sm:self-auto">
                 <button
                   onClick={() => setIsProfileOpen(true)}
                   className="rounded-md p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
@@ -161,12 +161,12 @@ export function Dashboard({ pathname, onNavigate }: DashboardProps) {
                 <h2 className="text-xl font-semibold tracking-tight text-stone-900">
                   {activeSection === "tasks" ? "Tasks" : activeSection === "calendar" ? "Calendar" : "Dashboard"}
                 </h2>
-                <p className="mt-1 text-sm text-stone-600">
+                <p className="mt-1 text-sm text-stone-500">
                   {activeSection === "tasks"
-                    ? "Dedicated task management page."
+                    ? "Manage tasks in one focused place."
                     : activeSection === "calendar"
-                    ? "Dedicated calendar page with scheduling sync."
-                    : "Simple workspace for planning and execution."}
+                    ? "View and sync your schedule."
+                    : "Plan faster with a calm, focused workspace."}
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -183,18 +183,18 @@ export function Dashboard({ pathname, onNavigate }: DashboardProps) {
             )}
 
             {activeSection === "calendar" && (
-              <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-xl border border-stone-200 bg-stone-50 sm:min-h-[520px] lg:h-[calc(100vh-12rem)]">
+              <div className="h-[70vh] min-h-[420px] max-h-[90vh] resize-y overflow-auto rounded-xl border border-stone-200 bg-stone-50 sm:min-h-[520px]">
                 <GoogleCalendarView />
               </div>
             )}
 
             {activeSection === "dashboard" && (
               <>
-                <section className="mb-4 flex flex-wrap items-center gap-2 text-xs">
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-stone-700">Total {totalCount}</span>
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-stone-700">Pending {pendingCount}</span>
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-stone-700">Completed {completedCount}</span>
-                  <span className="rounded-full border border-stone-200 bg-stone-50 px-2.5 py-1 text-stone-700">Rescheduled {rescheduledCount}</span>
+                <section className="mb-4 rounded-lg border border-stone-200 bg-stone-50 px-3 py-2 text-xs text-stone-600">
+                  <span className="font-medium text-stone-800">{totalCount}</span> total tasks ·{" "}
+                  <span className="font-medium text-stone-800">{pendingCount}</span> pending ·{" "}
+                  <span className="font-medium text-stone-800">{completedCount}</span> completed ·{" "}
+                  <span className="font-medium text-stone-800">{rescheduledCount}</span> rescheduled
                 </section>
 
                 <div className="grid grid-cols-1 gap-4">
@@ -223,7 +223,7 @@ export function Dashboard({ pathname, onNavigate }: DashboardProps) {
                 <h3 className="text-sm font-semibold text-stone-900">Calendar</h3>
                 <p className="mt-1 text-xs text-stone-600">Two-way sync with Google Calendar</p>
               </div>
-              <div className="h-[70vh] min-h-[420px] overflow-hidden rounded-xl border border-stone-200 bg-stone-50 sm:min-h-[520px] lg:h-[calc(100vh-10rem)]">
+              <div className="h-[70vh] min-h-[420px] max-h-[90vh] resize-y overflow-auto rounded-xl border border-stone-200 bg-stone-50 sm:min-h-[520px]">
                 <GoogleCalendarView />
               </div>
             </aside>
@@ -273,8 +273,8 @@ const PanelShell = ({
   children: React.ReactNode;
 }) => {
   return (
-    <section className="rounded-2xl border border-stone-200 bg-white p-3">
-      <div className="mb-3 border-b border-stone-200 px-1 pb-2">
+    <section className="rounded-xl border border-stone-200 bg-white p-3">
+      <div className="mb-2 border-b border-stone-200 px-1 pb-2">
         <h3 className="text-sm font-semibold text-stone-900">{title}</h3>
         <p className="mt-0.5 text-[11px] text-stone-500">{subtitle}</p>
       </div>
