@@ -1,0 +1,6 @@
+{
+  "$schema": "https://ui.shadcn.com/schema.json",
+  "registries": {
+    "@acme": "https://acme.com/r/{name}.json"
+  }
+}

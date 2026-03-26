@@ -123,6 +123,14 @@ VITE_SUPABASE_ANON_KEY=...
 VITE_GOOGLE_CLIENT_ID=your-client-id.apps.googleusercontent.com
 ```
 
+For email reminders (Supabase Edge Function):
+
+```bash
+# Set in Supabase Function secrets (not in frontend .env)
+RESEND_API_KEY=...
+REMINDER_FROM_EMAIL="Planify <your-verified@domain.com>"
+```
+
 ### 3) Create Supabase schema
 
 Run this SQL in the Supabase SQL editor:
@@ -138,10 +146,24 @@ In Supabase:
 - Enable Email/Password auth (if you want basic sign-in)
 - Enable Google provider (if you want “Continue with Google” on the sign-in page)
 - Add redirect URLs:
-  - `http://localhost:3000/auth/callback.html`
-  - Your deployed URL + `/auth/callback.html`
+  - `http://localhost:3000`
+  - Your deployed app URL (root)
 
-### 5) Start dev server
+### 5) Deploy reminder email function (optional but required for email reminders)
+
+This repo includes `supabase/functions/send-reminder-email/index.ts`.
+
+Deploy it with Supabase CLI:
+
+```bash
+supabase functions deploy send-reminder-email --no-verify-jwt=false
+supabase secrets set RESEND_API_KEY=your_resend_api_key
+supabase secrets set REMINDER_FROM_EMAIL="Planify <your-verified@domain.com>"
+```
+
+Then execute the SQL in `supabase-setup.sql` again to create `reminder_email_logs`.
+
+### 6) Start dev server
 
 ```bash
 npm run dev

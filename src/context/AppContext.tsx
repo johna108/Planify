@@ -6,11 +6,18 @@ import { User } from "@supabase/supabase-js";
 
 export type TaskStatus = "Pending" | "Completed" | "Missed" | "Rescheduled";
 
-export type DayAvailability = {
+export type AvailabilitySlot = {
+  start: string;
+  end: string;
+};
+
+export type LegacyDayAvailability = {
   enabled: boolean;
   start: string;
   end: string;
 };
+
+export type DayAvailability = AvailabilitySlot[] | LegacyDayAvailability | { slots: AvailabilitySlot[] };
 
 export type UserAvailability = {
   [key: string]: DayAvailability;
@@ -20,6 +27,12 @@ export type ScheduledTask = ExtractedTask & {
   scheduledStart: string; // ISO string
   scheduledEnd: string; // ISO string
   status: TaskStatus;
+  allowOutsideAvailability?: boolean;
+  scheduledOutsideAvailability?: boolean;
+};
+
+type SchedulableTask = Omit<ExtractedTask, "id"> & {
+  allowOutsideAvailability?: boolean;
 };
 
 export type SummaryData = {
@@ -38,10 +51,32 @@ export type TaskHistoryEntry = {
   timestamp: string;
 };
 
+export type ReminderTiming = "at_time" | "5_min_before" | "15_min_before" | "1_hour_before" | "1_day_before";
+
+export type ReminderSettings = {
+  inAppReminders: ReminderTiming[];
+};
+
+export type Notification = {
+  id: string;
+  taskId: string;
+  taskTitle: string;
+  type: "reminder";
+  reminderTiming: ReminderTiming;
+  message: string;
+  scheduledFor: string;
+  createdAt: string;
+  dismissed: boolean;
+};
+
+
 type AppState = {
   tasks: ScheduledTask[];
   taskHistory: TaskHistoryEntry[];
   manualDecisionTaskIds: string[];
+  notifications: Notification[];
+  triggeredReminderKeys: string[];
+  reminderSettings: ReminderSettings;
   summary: SummaryData | null;
   isProcessing: boolean;
   workflowStep: "Idle" | "Extracting" | "Scheduling" | "Done";
@@ -59,10 +94,12 @@ type AppContextType = {
   dismissManualDecisionPrompt: (id: string) => void;
   updateTaskStatus: (id: string, status: TaskStatus) => void;
   processNewInput: (input: string, extractedData: any) => void;
-  simulateMissedTask: (id: string) => void;
+  simulateMissedTask: (id: string, source?: "manual" | "auto") => void;
   setWorkflowStep: (step: AppState["workflowStep"]) => void;
   setIsProcessing: (isProcessing: boolean) => void;
   setAvailability: (availability: UserAvailability) => void;
+  updateReminderSettings: (settings: Partial<ReminderSettings>) => void;
+  dismissNotification: (id: string) => void;
   signOut: () => void;
 };
 
@@ -74,8 +111,45 @@ type PersistedAppState = {
   tasks: ScheduledTask[];
   taskHistory: TaskHistoryEntry[];
   manualDecisionTaskIds: string[];
+  notifications: Notification[];
+  triggeredReminderKeys: string[];
+  reminderSettings: ReminderSettings;
   summary: SummaryData | null;
 };
+
+const DEFAULT_REMINDER_SETTINGS: ReminderSettings = {
+  inAppReminders: ["1_hour_before", "5_min_before"],
+};
+
+function normalizeReminderSettings(value: unknown): ReminderSettings {
+  if (!value || typeof value !== "object") {
+    return DEFAULT_REMINDER_SETTINGS;
+  }
+
+  const candidate = value as {
+    inAppReminders?: unknown;
+    notificationReminders?: unknown;
+  };
+
+  const source = Array.isArray(candidate.inAppReminders)
+    ? candidate.inAppReminders
+    : Array.isArray(candidate.notificationReminders)
+    ? candidate.notificationReminders
+    : [];
+
+  const normalized = source.filter(
+    (timing): timing is ReminderTiming =>
+      timing === "at_time" ||
+      timing === "5_min_before" ||
+      timing === "15_min_before" ||
+      timing === "1_hour_before" ||
+      timing === "1_day_before",
+  );
+
+  return {
+    inAppReminders: normalized.length > 0 ? normalized : DEFAULT_REMINDER_SETTINGS.inAppReminders,
+  };
+}
 
 function loadPersistedAppState(): PersistedAppState | null {
   if (typeof window === "undefined") return null;
@@ -89,6 +163,9 @@ function loadPersistedAppState(): PersistedAppState | null {
       tasks: Array.isArray(parsed.tasks) ? parsed.tasks : [],
       taskHistory: Array.isArray(parsed.taskHistory) ? parsed.taskHistory : [],
       manualDecisionTaskIds: Array.isArray(parsed.manualDecisionTaskIds) ? parsed.manualDecisionTaskIds : [],
+      notifications: Array.isArray(parsed.notifications) ? parsed.notifications : [],
+      triggeredReminderKeys: Array.isArray(parsed.triggeredReminderKeys) ? parsed.triggeredReminderKeys : [],
+      reminderSettings: normalizeReminderSettings(parsed.reminderSettings),
       summary: parsed.summary ?? null,
     };
   } catch {
@@ -120,6 +197,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       tasks: persisted?.tasks || [],
       taskHistory: persisted?.taskHistory || [],
       manualDecisionTaskIds: persisted?.manualDecisionTaskIds || [],
+      notifications: persisted?.notifications || [],
+      triggeredReminderKeys: persisted?.triggeredReminderKeys || [],
+      reminderSettings: normalizeReminderSettings(persisted?.reminderSettings),
       summary: persisted?.summary || null,
       isProcessing: false,
       workflowStep: "Idle",
@@ -136,6 +216,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       tasks: state.tasks,
       taskHistory: state.taskHistory,
       manualDecisionTaskIds: state.manualDecisionTaskIds,
+      notifications: state.notifications,
+      triggeredReminderKeys: state.triggeredReminderKeys,
+      reminderSettings: state.reminderSettings,
       summary: state.summary,
     };
 
@@ -144,7 +227,38 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch {
       return;
     }
-  }, [state.tasks, state.taskHistory, state.manualDecisionTaskIds, state.summary]);
+  }, [state.tasks, state.taskHistory, state.manualDecisionTaskIds, state.notifications, state.triggeredReminderKeys, state.reminderSettings, state.summary]);
+
+  const REMINDER_OFFSET_MINUTES: Record<ReminderTiming, number> = {
+    at_time: 0,
+    "5_min_before": 5,
+    "15_min_before": 15,
+    "1_hour_before": 60,
+    "1_day_before": 24 * 60,
+  };
+
+  const reminderTimingLabel = (timing: ReminderTiming) => {
+    switch (timing) {
+      case "at_time":
+        return "at start time";
+      case "5_min_before":
+        return "5 minutes before";
+      case "15_min_before":
+        return "15 minutes before";
+      case "1_hour_before":
+        return "1 hour before";
+      case "1_day_before":
+        return "1 day before";
+      default:
+        return "before";
+    }
+  };
+
+  const getReminderDate = (scheduledStart: string, timing: ReminderTiming) => {
+    const start = parseISO(scheduledStart);
+    if (Number.isNaN(start.getTime())) return null;
+    return addMinutes(start, -REMINDER_OFFSET_MINUTES[timing]);
+  };
 
   const MANUAL_DECISION_KEYWORDS = [
     "internship",
@@ -171,6 +285,24 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     console.log('[AppContext] Initializing auth, checking hash');
+
+    const handleOAuthPopupCompletion = () => {
+      if (typeof window === 'undefined') return false;
+      if (window.name !== 'oauth_popup') return false;
+      if (!window.opener || window.opener.closed) return false;
+
+      try {
+        window.opener.postMessage({ type: 'SUPABASE_AUTH_SUCCESS' }, window.location.origin);
+      } catch (err) {
+        console.warn('[AppContext] Unable to notify opener window after OAuth success', err);
+      }
+
+      window.setTimeout(() => {
+        window.close();
+      }, 150);
+
+      return true;
+    };
     
     // Check if we're coming back from OAuth callback (hash contains session)
     if (window.location.hash) {
@@ -180,6 +312,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Get initial session
     supabase.auth.getSession().then(({ data: { session } }) => {
       console.log('[AppContext] Initial session:', session?.user?.email ? `${session.user.email}` : 'null');
+
+      if (session?.user && handleOAuthPopupCompletion()) {
+        setState(prev => ({ ...prev, isLoadingAuth: false }));
+        return;
+      }
+
       setState(prev => ({ ...prev, user: session?.user ?? null }));
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -191,6 +329,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       console.log('[AppContext] Auth state changed, event:', _event, 'user:', session?.user?.email ?? 'null');
+
+      if (session?.user && handleOAuthPopupCompletion()) {
+        setState(prev => ({ ...prev, isLoadingAuth: false }));
+        return;
+      }
+
       setState(prev => ({ ...prev, user: session?.user ?? null }));
       if (session?.user) {
         fetchProfile(session.user.id);
@@ -257,6 +401,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     return parsed.getHours() !== 0 || parsed.getMinutes() !== 0 || parsed.getSeconds() !== 0;
   };
 
+  const hasDayReferenceInText = (value?: string) => {
+    if (!value) return false;
+    const text = value.toLowerCase();
+
+    const dayKeywords =
+      /\b(today|tomorrow|tonight|monday|mon|tuesday|tue|wednesday|wed|thursday|thu|friday|fri|saturday|sat|sunday|sun|next\s+week|next\s+(mon|tue|wed|thu|fri|sat|sun))\b/i;
+    const datePatterns =
+      /\b(\d{1,2}[/-]\d{1,2}(?:[/-]\d{2,4})?|\d{4}-\d{2}-\d{2}|(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?)\b/i;
+
+    return dayKeywords.test(text) || datePatterns.test(text);
+  };
+
+  const hasTimeReferenceInText = (value?: string) => {
+    if (!value) return false;
+    return /\b(?:at\s*)?\d{1,2}(?::\d{2})?\s*(am|pm)?\b/i.test(value);
+  };
+
+  const normalizeTimeOnlyPreferredStart = (preferred: Date, baseNow: Date) => {
+    const normalized = new Date(baseNow);
+    normalized.setSeconds(0, 0);
+    normalized.setHours(preferred.getHours(), preferred.getMinutes(), 0, 0);
+
+    if (isBefore(normalized, baseNow)) {
+      return addDays(normalized, 1);
+    }
+
+    return normalized;
+  };
+
   const resolvePreferredStart = (task: Omit<ExtractedTask, "id">) => {
     const explicitPreferredStart = parseIsoDate(task.preferredStart);
     if (explicitPreferredStart) return explicitPreferredStart;
@@ -270,20 +443,37 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const inferPreferredStartFromText = (text: string, base: Date) => {
     const normalized = text.toLowerCase();
-    const timeMatch = normalized.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
+    const timeMatch = normalized.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
     if (!timeMatch) return null;
 
     const rawHour = Number(timeMatch[1]);
     const minutes = Number(timeMatch[2] || "0");
-    const meridiem = timeMatch[3].toLowerCase();
+    const meridiem = timeMatch[3]?.toLowerCase();
+    const hasMinutes = typeof timeMatch[2] === "string";
 
-    if (!Number.isFinite(rawHour) || rawHour < 1 || rawHour > 12 || minutes < 0 || minutes > 59) {
+    if (!Number.isFinite(rawHour) || minutes < 0 || minutes > 59) {
       return null;
     }
 
-    let hour = rawHour % 12;
-    if (meridiem === "pm") {
-      hour += 12;
+    let hour = rawHour;
+
+    if (meridiem) {
+      if (rawHour < 1 || rawHour > 12) {
+        return null;
+      }
+
+      hour = rawHour % 12;
+      if (meridiem === "pm") {
+        hour += 12;
+      }
+    } else {
+      if (!hasMinutes) {
+        return null;
+      }
+
+      if (rawHour < 0 || rawHour > 23) {
+        return null;
+      }
     }
 
     const inferred = new Date(base);
@@ -309,16 +499,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const baseNow = now ?? new Date();
 
     const taskText = `${task.title || ""} ${task.description || ""}`.trim();
+    const combinedText = `${taskText} ${rawInput || ""}`.trim();
     const inferredFromTask = inferPreferredStartFromText(taskText, baseNow);
-    if (inferredFromTask) return inferredFromTask;
+    const inferredFromInput = rawInput ? inferPreferredStartFromText(rawInput, baseNow) : null;
+    const explicitInputTime = hasTimeReferenceInText(rawInput);
 
-    if (rawInput) {
-      const inferredFromInput = inferPreferredStartFromText(rawInput, baseNow);
-      if (inferredFromInput) return inferredFromInput;
+    if (explicitInputTime && inferredFromInput) {
+      return inferredFromInput;
     }
 
     const explicit = resolvePreferredStart(task);
-    if (explicit) return explicit;
+    if (explicit) {
+      const hasDayReference = hasDayReferenceInText(combinedText);
+      const hasTimeReference = hasTimeReferenceInText(combinedText);
+
+      if (!hasDayReference && hasTimeReference) {
+        return normalizeTimeOnlyPreferredStart(explicit, baseNow);
+      }
+
+      return explicit;
+    }
+
+    if (inferredFromTask) return inferredFromTask;
+
+    if (inferredFromInput) return inferredFromInput;
 
     return null;
   };
@@ -326,6 +530,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   type ScheduleOptions = {
     ignoreTextTimeInference?: boolean;
     minStartTime?: Date;
+    availabilityOverride?: UserAvailability | null;
   };
 
   const resolveTaskPreferredStartWithOptions = (
@@ -342,13 +547,65 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Simple scheduling logic: find next available slot during working hours (9 AM - 6 PM)
+  const normalizeDaySlots = (value: DayAvailability | undefined): AvailabilitySlot[] => {
+    if (!value) {
+      return [{ start: "09:00", end: "18:00" }];
+    }
+
+    if (Array.isArray(value)) {
+      const slots = value.filter((slot) => slot && typeof slot.start === "string" && typeof slot.end === "string");
+      return slots.length > 0 ? slots : [];
+    }
+
+    if (typeof value === "object" && Array.isArray((value as { slots?: AvailabilitySlot[] }).slots)) {
+      const slots = (value as { slots: AvailabilitySlot[] }).slots.filter(
+        (slot) => slot && typeof slot.start === "string" && typeof slot.end === "string",
+      );
+      return slots.length > 0 ? slots : [];
+    }
+
+    const legacy = value as LegacyDayAvailability;
+    if (!legacy.enabled) {
+      return [];
+    }
+
+    return [{ start: legacy.start || "09:00", end: legacy.end || "18:00" }];
+  };
+
+  const slotToDateRange = (baseDate: Date, slot: AvailabilitySlot) => {
+    const [startHour, startMinute] = slot.start.split(":").map(Number);
+    const [endHour, endMinute] = slot.end.split(":").map(Number);
+
+    if (
+      !Number.isFinite(startHour) ||
+      !Number.isFinite(startMinute) ||
+      !Number.isFinite(endHour) ||
+      !Number.isFinite(endMinute)
+    ) {
+      return null;
+    }
+
+    const slotStart = new Date(baseDate);
+    slotStart.setHours(startHour, startMinute, 0, 0);
+
+    const slotEnd = new Date(baseDate);
+    slotEnd.setHours(endHour, endMinute, 0, 0);
+
+    if (!isBefore(slotStart, slotEnd)) {
+      return null;
+    }
+
+    return { slotStart, slotEnd };
+  };
+
   const scheduleTasks = (
-    newTasks: Omit<ExtractedTask, "id">[],
+    newTasks: SchedulableTask[],
     existingTasks: ScheduledTask[],
     rawInput?: string,
     options?: ScheduleOptions,
   ): ScheduledTask[] => {
-    const currentTime = roundToNextQuarterHour(new Date());
+    const now = new Date();
+    const currentTime = roundToNextQuarterHour(now);
     const minStartTime = options?.minStartTime
       ? roundToNextQuarterHour(options.minStartTime)
       : currentTime;
@@ -356,10 +613,48 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const scheduled: ScheduledTask[] = [];
     let currentSlot = currentTime;
 
+    const isWithinAvailabilityRange = (
+      start: Date,
+      end: Date,
+      availability: UserAvailability | null,
+    ) => {
+      const dayOfWeek = format(start, "EEEE").toLowerCase();
+      const daySlotsRaw = availability
+        ? normalizeDaySlots(availability[dayOfWeek])
+        : [{ start: "09:00", end: "18:00" }];
+
+      if (daySlotsRaw.length === 0) return false;
+
+      const daySlots = daySlotsRaw
+        .map((slot) => slotToDateRange(start, slot))
+        .filter((slot): slot is { slotStart: Date; slotEnd: Date } => slot !== null)
+        .sort((a, b) => a.slotStart.getTime() - b.slotStart.getTime());
+
+      return daySlots.some((slot) => !isBefore(start, slot.slotStart) && !isAfter(end, slot.slotEnd));
+    };
+
+    const hasTaskConflict = (
+      start: Date,
+      end: Date,
+      tasks: ScheduledTask[],
+    ) => {
+      return tasks.some((t) => {
+        if (t.status === "Completed" || t.status === "Missed") return false;
+        const tStart = parseISO(t.scheduledStart);
+        const tEnd = parseISO(t.scheduledEnd);
+        return (
+          (isAfter(start, tStart) && isBefore(start, tEnd)) ||
+          (isAfter(end, tStart) && isBefore(end, tEnd)) ||
+          (isBefore(start, tStart) && isAfter(end, tEnd)) ||
+          start.getTime() === tStart.getTime()
+        );
+      });
+    };
+
     // Sort new tasks by priority (High > Medium > Low) and deadline
     const sortedTasks = [...newTasks].sort((a, b) => {
-      const aPreferredStart = resolveTaskPreferredStartWithOptions(a, rawInput, currentTime, options);
-      const bPreferredStart = resolveTaskPreferredStartWithOptions(b, rawInput, currentTime, options);
+      const aPreferredStart = resolveTaskPreferredStartWithOptions(a, rawInput, now, options);
+      const bPreferredStart = resolveTaskPreferredStartWithOptions(b, rawInput, now, options);
 
       if (aPreferredStart && bPreferredStart) {
         return aPreferredStart.getTime() - bPreferredStart.getTime();
@@ -382,12 +677,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     for (const task of sortedTasks) {
-      const preferredStart = resolveTaskPreferredStartWithOptions(task, rawInput, currentTime, options);
+      const preferredStart = resolveTaskPreferredStartWithOptions(task, rawInput, now, options);
       const initialSlot = preferredStart
-        ? roundToNextQuarterHour(preferredStart)
+        ? new Date(preferredStart)
         : currentSlot;
       let taskSlot = initialSlot;
-      while (isBefore(taskSlot, currentTime) && preferredStart) {
+      while (isBefore(taskSlot, now) && preferredStart) {
         taskSlot = addDays(taskSlot, 1);
       }
       if (!preferredStart && isBefore(taskSlot, currentTime)) {
@@ -404,68 +699,94 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
       while (!foundSlot && attempts < 1000) {
         attempts++;
-        
-        // Use user availability if set, otherwise default 9-6
-        const dayOfWeek = format(taskSlot, 'EEEE').toLowerCase();
-        const dayConfig = state.availability ? state.availability[dayOfWeek] : { enabled: true, start: '09:00', end: '18:00' };
-
-        if (!dayConfig || !dayConfig.enabled) {
-          // Move to next day at 00:00
-          taskSlot = startOfDay(addDays(taskSlot, 1));
-          continue;
-        }
-
-        const [startHour, startMinute] = dayConfig.start.split(':').map(Number);
-        const [endHour, endMinute] = dayConfig.end.split(':').map(Number);
-
-        const dayStart = new Date(taskSlot);
-        dayStart.setHours(startHour, startMinute, 0, 0);
-
-        const dayEnd = new Date(taskSlot);
-        dayEnd.setHours(endHour, endMinute, 0, 0);
-
-        if (taskSlot >= dayEnd) {
-          taskSlot = startOfDay(addDays(taskSlot, 1));
-          continue;
-        } else if (taskSlot < dayStart) {
-          taskSlot = dayStart;
-        }
-
+        const activeAvailability = options?.availabilityOverride ?? state.availability;
         const duration = task.estimatedDurationMinutes || 30;
-        const proposedEnd = addMinutes(taskSlot, duration);
 
-        // Check if proposed end exceeds day end
-        if (proposedEnd > dayEnd) {
+        const shouldTryOutsideAvailability = Boolean(task.allowOutsideAvailability && preferredStart);
+        if (shouldTryOutsideAvailability) {
+          const outsideCandidateStart = taskSlot;
+          const outsideCandidateEnd = addMinutes(outsideCandidateStart, duration);
+          const allTasks = [...existingTasks, ...scheduled];
+          const hasConflict = hasTaskConflict(outsideCandidateStart, outsideCandidateEnd, allTasks);
+
+          if (!hasConflict) {
+            scheduled.push({
+              ...task,
+              id: Math.random().toString(36).substring(7),
+              scheduledStart: outsideCandidateStart.toISOString(),
+              scheduledEnd: outsideCandidateEnd.toISOString(),
+              status: "Pending",
+              scheduledOutsideAvailability: !isWithinAvailabilityRange(
+                outsideCandidateStart,
+                outsideCandidateEnd,
+                activeAvailability,
+              ),
+            });
+            currentSlot = isAfter(outsideCandidateEnd, currentSlot) ? outsideCandidateEnd : currentSlot;
+            foundSlot = true;
+            continue;
+          }
+
+          taskSlot = addMinutes(outsideCandidateStart, 15);
+          continue;
+        }
+        
+        // Use user availability slots if set, otherwise default 9-6
+        const dayOfWeek = format(taskSlot, 'EEEE').toLowerCase();
+        const daySlotsRaw = activeAvailability
+          ? normalizeDaySlots(activeAvailability[dayOfWeek])
+          : [{ start: "09:00", end: "18:00" }];
+
+        if (daySlotsRaw.length === 0) {
+          taskSlot = startOfDay(addDays(taskSlot, 1));
+          continue;
+        }
+
+        const daySlots = daySlotsRaw
+          .map((slot) => slotToDateRange(taskSlot, slot))
+          .filter((slot): slot is { slotStart: Date; slotEnd: Date } => slot !== null)
+          .sort((a, b) => a.slotStart.getTime() - b.slotStart.getTime());
+
+        let candidateStart: Date | null = null;
+        let proposedEnd: Date | null = null;
+
+        for (const slot of daySlots) {
+          if (taskSlot >= slot.slotEnd) {
+            continue;
+          }
+
+          const slotCandidateStart = taskSlot < slot.slotStart ? slot.slotStart : taskSlot;
+          const slotCandidateEnd = addMinutes(slotCandidateStart, duration);
+
+          if (!isAfter(slotCandidateEnd, slot.slotEnd)) {
+            candidateStart = slotCandidateStart;
+            proposedEnd = slotCandidateEnd;
+            break;
+          }
+        }
+
+        if (!candidateStart || !proposedEnd) {
           taskSlot = startOfDay(addDays(taskSlot, 1));
           continue;
         }
 
         // Check for conflicts with existing tasks and newly scheduled tasks
         const allTasks = [...existingTasks, ...scheduled];
-        const hasConflict = allTasks.some(t => {
-          if (t.status === "Completed" || t.status === "Missed") return false;
-          const tStart = parseISO(t.scheduledStart);
-          const tEnd = parseISO(t.scheduledEnd);
-          return (
-            (isAfter(taskSlot, tStart) && isBefore(taskSlot, tEnd)) ||
-            (isAfter(proposedEnd, tStart) && isBefore(proposedEnd, tEnd)) ||
-            (isBefore(taskSlot, tStart) && isAfter(proposedEnd, tEnd)) ||
-            taskSlot.getTime() === tStart.getTime()
-          );
-        });
+        const hasConflict = hasTaskConflict(candidateStart, proposedEnd, allTasks);
 
         if (!hasConflict) {
           scheduled.push({
             ...task,
             id: Math.random().toString(36).substring(7),
-            scheduledStart: taskSlot.toISOString(),
+            scheduledStart: candidateStart.toISOString(),
             scheduledEnd: proposedEnd.toISOString(),
             status: "Pending",
+            scheduledOutsideAvailability: false,
           });
           currentSlot = isAfter(proposedEnd, currentSlot) ? proposedEnd : currentSlot;
           foundSlot = true;
         } else {
-          taskSlot = addMinutes(taskSlot, 15); // Try next 15 min slot
+          taskSlot = addMinutes(candidateStart, 15); // Try next 15 min slot
         }
       }
     }
@@ -478,18 +799,71 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     
     setTimeout(() => {
       const now = new Date();
-      const normalizedTasks = (extractedData.tasks || []).map((task: Omit<ExtractedTask, "id">) => {
-        if (task.preferredStart) return task;
-        const inferred = resolveTaskPreferredStart(task, input, now);
-        if (!inferred) return task;
+      const normalizedTasks = (extractedData.tasks || []).map((task: Omit<ExtractedTask, "id">): SchedulableTask => {
+        const preferred = resolveTaskPreferredStart(task, input, now) ?? parseIsoDate(task.preferredStart);
+        if (!preferred) return task;
+
+        const preferredStart = preferred.toISOString();
+        const preferredEnd = addMinutes(preferred, task.estimatedDurationMinutes || 30);
+        const activeAvailability = state.availability;
+        const outsideAvailability = (() => {
+          const dayOfWeek = format(preferred, "EEEE").toLowerCase();
+          const daySlotsRaw = activeAvailability
+            ? normalizeDaySlots(activeAvailability[dayOfWeek])
+            : [{ start: "09:00", end: "18:00" }];
+
+          if (daySlotsRaw.length === 0) return true;
+
+          const daySlots = daySlotsRaw
+            .map((slot) => slotToDateRange(preferred, slot))
+            .filter((slot): slot is { slotStart: Date; slotEnd: Date } => slot !== null)
+            .sort((a, b) => a.slotStart.getTime() - b.slotStart.getTime());
+
+          return !daySlots.some((slot) => !isBefore(preferred, slot.slotStart) && !isAfter(preferredEnd, slot.slotEnd));
+        })();
 
         return {
           ...task,
-          preferredStart: inferred.toISOString(),
+          preferredStart,
+          allowOutsideAvailability: outsideAvailability,
         };
       });
 
       const newScheduledTasks = scheduleTasks(normalizedTasks, state.tasks, input);
+      const shiftedRequestedTimesCount = newScheduledTasks.filter((task) => {
+        if (!task.preferredStart) return false;
+
+        const requestedStart = parseISO(task.preferredStart);
+        const finalStart = parseISO(task.scheduledStart);
+        if (Number.isNaN(requestedStart.getTime()) || Number.isNaN(finalStart.getTime())) return false;
+
+        const diffMinutes = Math.abs(finalStart.getTime() - requestedStart.getTime()) / (1000 * 60);
+        return diffMinutes >= 15;
+      }).length;
+
+      const timeShiftReason = "Some requested times were adjusted due to conflicts or availability.";
+      const baseSummary = extractedData.summary as SummaryData | null;
+      const adjustedSummary = (() => {
+        if (shiftedRequestedTimesCount === 0) return baseSummary;
+
+        if (!baseSummary) {
+          return {
+            text: timeShiftReason,
+            keyInsights: [],
+          } as SummaryData;
+        }
+
+        const currentText = baseSummary.text?.trim() || "";
+        if (currentText.toLowerCase().includes("adjusted due to conflicts or availability")) {
+          return baseSummary;
+        }
+
+        return {
+          ...baseSummary,
+          text: `${currentText} ${timeShiftReason}`.trim(),
+        };
+      })();
+
       const historyEntries = newScheduledTasks.map((task) =>
         createHistoryEntry(
           task.id,
@@ -503,7 +877,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ...prev,
         tasks: [...prev.tasks, ...newScheduledTasks],
         taskHistory: [...historyEntries, ...prev.taskHistory].slice(0, 500),
-        summary: extractedData.summary,
+        summary: adjustedSummary,
         workflowStep: "Done",
         isProcessing: false,
       }));
@@ -608,7 +982,92 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }));
   };
 
-  const simulateMissedTask = (id: string) => {
+  const updateReminderSettings = (settings: Partial<ReminderSettings>) => {
+    setState((prev) => ({
+      ...prev,
+      reminderSettings: {
+        ...prev.reminderSettings,
+        ...settings,
+      },
+    }));
+  };
+
+  const dismissNotification = (id: string) => {
+    setState((prev) => ({
+      ...prev,
+      notifications: prev.notifications.map((notification) =>
+        notification.id === id ? { ...notification, dismissed: true } : notification,
+      ),
+    }));
+  };
+
+  useEffect(() => {
+    if (!state.user) return;
+
+    const tick = () => {
+      const now = new Date();
+      const windowEnd = addMinutes(now, 2);
+      const newNotifications: Notification[] = [];
+      const newlyTriggeredKeys: string[] = [];
+
+      for (const task of state.tasks) {
+        if (task.status === "Completed" || task.status === "Missed") continue;
+
+        const inAppReminders = Array.isArray(state.reminderSettings?.inAppReminders)
+          ? state.reminderSettings.inAppReminders
+          : DEFAULT_REMINDER_SETTINGS.inAppReminders;
+
+        for (const timing of inAppReminders) {
+          const reminderAt = getReminderDate(task.scheduledStart, timing);
+          if (!reminderAt) continue;
+
+          if (isBefore(reminderAt, now) || isAfter(reminderAt, windowEnd)) continue;
+
+          const reminderKey = `${task.id}:${timing}`;
+          if (state.triggeredReminderKeys.includes(reminderKey)) continue;
+
+          const message = `Upcoming: ${task.title} (${reminderTimingLabel(timing)})`;
+          newNotifications.push({
+            id: generateId(),
+            taskId: task.id,
+            taskTitle: task.title,
+            type: "reminder",
+            reminderTiming: timing,
+            message,
+            scheduledFor: task.scheduledStart,
+            createdAt: now.toISOString(),
+            dismissed: false,
+          });
+
+          if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "granted") {
+            new Notification("Planify Reminder", {
+              body: message,
+            });
+          }
+
+          newlyTriggeredKeys.push(reminderKey);
+        }
+      }
+
+      if (newNotifications.length === 0 && newlyTriggeredKeys.length === 0) return;
+
+      setState((prev) => ({
+        ...prev,
+        notifications: [...newNotifications, ...prev.notifications].slice(0, 100),
+        triggeredReminderKeys: [...new Set([...prev.triggeredReminderKeys, ...newlyTriggeredKeys])],
+      }));
+    };
+
+    if (typeof window !== "undefined" && "Notification" in window && Notification.permission === "default") {
+      void Notification.requestPermission();
+    }
+
+    tick();
+    const interval = window.setInterval(tick, 60_000);
+    return () => window.clearInterval(interval);
+  }, [state.user, state.tasks, state.reminderSettings, state.triggeredReminderKeys]);
+
+  const simulateMissedTask = (id: string, source: "manual" | "auto" = "manual") => {
     setState(prev => ({ ...prev, isProcessing: true, workflowStep: "Extracting" }));
     
     // Mark as missed
@@ -656,7 +1115,27 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           const rescheduledTasks = scheduleTasks([newTaskToSchedule], prev.tasks, undefined, {
             ignoreTextTimeInference: true,
             minStartTime: minRescheduleStart,
+            availabilityOverride: prev.availability,
           });
+
+          if (rescheduledTasks.length === 0) {
+            const alreadyQueued = prev.manualDecisionTaskIds.includes(id);
+            return {
+              ...prev,
+              manualDecisionTaskIds: alreadyQueued ? prev.manualDecisionTaskIds : [id, ...prev.manualDecisionTaskIds],
+              taskHistory: [
+                createHistoryEntry(
+                  id,
+                  missedTask.title,
+                  "ManualDecisionRequired",
+                  "No slot matched your availability for auto-rescheduling.",
+                ),
+                ...prev.taskHistory,
+              ].slice(0, 500),
+              workflowStep: "Done",
+              isProcessing: false,
+            };
+          }
           
           // Mark the newly scheduled task as "Rescheduled"
           const finalRescheduledTasks = rescheduledTasks.map(t => ({ ...t, status: "Rescheduled" as TaskStatus }));
@@ -665,7 +1144,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
               task.id,
               task.title,
               "Rescheduled",
-              `Rescheduled to ${format(parseISO(task.scheduledStart), "MMM d, h:mm a")}`,
+              source === "auto"
+                ? `Auto-missed & rescheduled to ${format(parseISO(task.scheduledStart), "MMM d, h:mm a")}`
+                : `Rescheduled to ${format(parseISO(task.scheduledStart), "MMM d, h:mm a")}`,
             ),
           );
           
@@ -685,6 +1166,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 1000);
   };
 
+  useEffect(() => {
+    if (!state.user) return;
+    if (state.isProcessing || state.workflowStep !== "Idle") return;
+
+    const now = new Date();
+
+    const overdueTask = [...state.tasks]
+      .filter((task) => task.status === "Pending" || task.status === "Rescheduled")
+      .sort((a, b) => parseISO(a.scheduledEnd).getTime() - parseISO(b.scheduledEnd).getTime())
+      .find((task) => {
+        const scheduledEnd = parseISO(task.scheduledEnd);
+        const scheduledEndPassed = !Number.isNaN(scheduledEnd.getTime()) && scheduledEnd.getTime() <= now.getTime();
+
+        let deadlinePassed = false;
+        if (task.deadline) {
+          const deadlineDate = parseISO(task.deadline);
+          deadlinePassed = !Number.isNaN(deadlineDate.getTime()) && deadlineDate.getTime() <= now.getTime();
+        }
+
+        return scheduledEndPassed || deadlinePassed;
+      });
+
+    if (!overdueTask) return;
+
+    simulateMissedTask(overdueTask.id, "auto");
+  }, [state.user, state.tasks, state.isProcessing, state.workflowStep]);
+
   return (
     <AppContext.Provider
       value={{
@@ -700,6 +1208,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         setWorkflowStep: (step) => setState(prev => ({ ...prev, workflowStep: step })),
         setIsProcessing: (isProcessing) => setState(prev => ({ ...prev, isProcessing })),
         setAvailability,
+        updateReminderSettings,
+        dismissNotification,
         signOut,
       }}
     >

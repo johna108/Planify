@@ -92,9 +92,9 @@ export function InputPanel() {
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-      <h2 className="text-lg font-semibold text-slate-800 mb-3 flex items-center gap-2">
-        <span className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg">
+    <div className="rounded-xl border border-stone-200 bg-white p-4">
+      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-stone-900">
+        <span className="rounded-md bg-stone-100 p-1.5 text-stone-700">
           <Send size={18} />
         </span>
         Smart Input
@@ -104,14 +104,14 @@ export function InputPanel() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Paste messy notes, chat logs, or tasks here... e.g., 'Assignment due Friday, meeting at 5 PM, study ML chapter 3'"
-          className="w-full min-h-[120px] p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none text-sm text-slate-700 placeholder:text-slate-400"
+          className="min-h-[120px] w-full resize-none rounded-lg border border-stone-300 p-3 text-sm text-stone-700 placeholder:text-stone-400 focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
           disabled={state.isProcessing}
         />
         <div className="absolute bottom-3 right-3 flex items-center gap-2">
           <button
             type="submit"
             disabled={!input.trim() || state.isProcessing}
-            className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+            className="flex items-center gap-2 rounded-md bg-stone-900 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-stone-800 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {state.isProcessing ? (
               <>
@@ -128,11 +128,11 @@ export function InputPanel() {
         </div>
       </form>
 
-      <div className="mt-4 pt-4 border-t border-slate-200">
+      <div className="mt-4 border-t border-stone-200 pt-4">
         <button
           type="button"
           onClick={() => setShowManualForm((prev) => !prev)}
-          className="text-sm font-medium text-indigo-600 hover:text-indigo-700 flex items-center gap-2"
+          className="flex items-center gap-2 text-sm font-medium text-stone-700 hover:text-stone-900"
         >
           <PlusCircle size={16} />
           {showManualForm ? "Hide manual task form" : "Add task manually"}
@@ -147,33 +147,33 @@ export function InputPanel() {
             )}
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Task title</label>
+              <label className="mb-1 block text-xs font-semibold text-stone-600">Task title</label>
               <input
                 value={manualTitle}
                 onChange={(e) => setManualTitle(e.target.value)}
                 placeholder="e.g., Prepare slides"
-                className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                 required
               />
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Description</label>
+              <label className="mb-1 block text-xs font-semibold text-stone-600">Description</label>
               <textarea
                 value={manualDescription}
                 onChange={(e) => setManualDescription(e.target.value)}
                 placeholder="Optional details"
-                className="w-full min-h-[72px] px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm resize-none"
+                className="min-h-[72px] w-full resize-none rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
               />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Priority</label>
+                <label className="mb-1 block text-xs font-semibold text-stone-600">Priority</label>
                 <select
                   value={manualPriority}
                   onChange={(e) => setManualPriority(e.target.value as "High" | "Medium" | "Low")}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                 >
                   <option value="High">High</option>
                   <option value="Medium">Medium</option>
@@ -182,27 +182,27 @@ export function InputPanel() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-600 mb-1">Duration (minutes)</label>
+                <label className="mb-1 block text-xs font-semibold text-stone-600">Duration (minutes)</label>
                 <input
                   type="number"
                   min={5}
                   step={5}
                   value={manualDuration}
                   onChange={(e) => setManualDuration(Number(e.target.value))}
-                  className="w-full px-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  className="w-full rounded-lg border border-stone-300 px-3 py-2 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold text-slate-600 mb-1">Start date & time</label>
+              <label className="mb-1 block text-xs font-semibold text-stone-600">Start date & time</label>
               <div className="relative">
-                <CalendarClock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <CalendarClock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
                 <input
                   type="datetime-local"
                   value={manualStart}
                   onChange={(e) => setManualStart(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 text-sm"
+                  className="w-full rounded-lg border border-stone-300 py-2 pl-9 pr-3 text-sm focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                   required
                 />
               </div>

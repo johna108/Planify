@@ -8,27 +8,27 @@ export function SummaryView() {
   if (!state.summary) return null;
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-4">
-      <h2 className="text-lg font-semibold text-slate-800 mb-3 flex items-center gap-2">
-        <span className="bg-indigo-100 text-indigo-600 p-1.5 rounded-lg">
+    <div className="rounded-xl border border-stone-200 bg-white p-4">
+      <h2 className="mb-3 flex items-center gap-2 text-base font-semibold text-stone-900">
+        <span className="rounded-md bg-stone-100 p-1.5 text-stone-700">
           <FileText size={18} />
         </span>
-        AI Summary
+        Summary
       </h2>
-      <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+      <p className="mb-4 text-sm leading-relaxed text-stone-700">
         {state.summary.text}
       </p>
       
       {state.summary.keyInsights.length > 0 && (
         <div>
-          <h3 className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1">
-            <Lightbulb size={14} className="text-amber-500" />
+          <h3 className="mb-2 flex items-center gap-1 text-xs font-semibold uppercase tracking-wider text-stone-500">
+            <Lightbulb size={14} className="text-amber-600" />
             Key Insights
           </h3>
           <ul className="space-y-2">
             {state.summary.keyInsights.map((insight, idx) => (
-              <li key={idx} className="text-sm text-slate-700 flex items-start gap-2">
-                <span className="text-indigo-500 mt-0.5">•</span>
+              <li key={idx} className="flex items-start gap-2 text-sm text-stone-700">
+                <span className="mt-0.5 text-amber-600">•</span>
                 <span>{insight}</span>
               </li>
             ))}

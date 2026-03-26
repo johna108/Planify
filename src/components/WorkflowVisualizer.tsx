@@ -13,28 +13,26 @@ export function WorkflowVisualizer() {
     { id: "Done", label: "Executed", icon: CheckCircle2 },
   ];
 
-  const currentStepIndex = steps.findIndex((s) => s.id === state.workflowStep);
+  const currentStepIndex = Math.max(0, steps.findIndex((s) => s.id === state.workflowStep));
 
   return (
-    <div className="bg-slate-900 rounded-xl shadow-lg p-6 text-white border border-slate-800">
-      <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-6 flex items-center gap-2">
-        <BrainCircuit size={16} className="text-indigo-400" />
-       Adaptive AI Engine
+    <div className="rounded-xl border border-stone-200 bg-stone-50 p-5">
+      <h2 className="mb-5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-stone-500">
+        <BrainCircuit size={15} className="text-amber-600" />
+        Workflow State
       </h2>
 
       <div className="flex items-center justify-between relative">
-        {/* Connecting Line */}
-        <div className="absolute top-1/2 left-0 w-full h-1 bg-slate-800 -translate-y-1/2 rounded-full z-0"></div>
+        <div className="absolute top-1/2 left-0 z-0 h-1 w-full -translate-y-1/2 rounded-full bg-stone-200"></div>
 
-        {/* Active Line Progress */}
         <motion.div
-          className="absolute top-1/2 left-0 h-1 bg-indigo-500 -translate-y-1/2 rounded-full z-0"
+          className="absolute top-1/2 left-0 z-0 h-1 -translate-y-1/2 rounded-full bg-amber-500"
           initial={{ width: "0%" }}
           animate={{
             width: `${(currentStepIndex / (steps.length - 1)) * 100}%`,
           }}
           transition={{ duration: 0.5, ease: "easeInOut" }}
-        ></motion.div>
+        />
 
         {steps.map((step, index) => {
           const isActive = index === currentStepIndex;
@@ -46,10 +44,10 @@ export function WorkflowVisualizer() {
               <motion.div
                 className={`w-12 h-12 rounded-full flex items-center justify-center border-2 ${
                   isActive
-                    ? "bg-indigo-600 border-indigo-400 shadow-[0_0_15px_rgba(99,102,241,0.5)]"
+                    ? "border-amber-500 bg-amber-500 text-white"
                     : isPast
-                    ? "bg-slate-800 border-indigo-500 text-indigo-400"
-                    : "bg-slate-800 border-slate-700 text-slate-500"
+                    ? "border-amber-300 bg-amber-100 text-amber-700"
+                    : "border-stone-300 bg-white text-stone-400"
                 }`}
                 animate={
                   isActive
@@ -61,7 +59,7 @@ export function WorkflowVisualizer() {
               </motion.div>
               <span
                 className={`text-xs font-medium ${
-                  isActive ? "text-indigo-300" : isPast ? "text-slate-400" : "text-slate-600"
+                  isActive ? "text-stone-900" : isPast ? "text-stone-700" : "text-stone-500"
                 }`}
               >
                 {step.label}

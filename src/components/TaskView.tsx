@@ -35,6 +35,16 @@ export function TaskView() {
 
   const manualDecisionTaskIdSet = useMemo(() => new Set(state.manualDecisionTaskIds), [state.manualDecisionTaskIds]);
 
+  const autoRescheduledTaskIdSet = useMemo(() => {
+    const ids = new Set<string>();
+    for (const entry of state.taskHistory) {
+      if (entry.action !== "Rescheduled") continue;
+      if (!entry.details?.toLowerCase().includes("auto-missed")) continue;
+      ids.add(entry.taskId);
+    }
+    return ids;
+  }, [state.taskHistory]);
+
   const openEditModal = (task: any) => {
     const start = parseISO(task.scheduledStart);
     const end = parseISO(task.scheduledEnd);
@@ -272,6 +282,16 @@ export function TaskView() {
                           {task.priority}
                         </span>
                       </div>
+                      {task.status === "Rescheduled" && autoRescheduledTaskIdSet.has(task.id) && (
+                        <div className="mb-2 inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+                          Auto-missed & rescheduled
+                        </div>
+                      )}
+                      {task.scheduledOutsideAvailability && (
+                        <div className="mb-2 inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-800">
+                          One-off outside availability
+                        </div>
+                      )}
                       {task.description && (
                         <p className="text-xs text-slate-500 line-clamp-2 mb-2">{task.description}</p>
                       )}

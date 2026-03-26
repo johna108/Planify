@@ -76,6 +76,27 @@ const GOOGLE_CLIENT_ID = (import.meta as any).env.VITE_GOOGLE_CLIENT_ID || "";
 const GOOGLE_SESSION_STORAGE_KEY = "planify_google_calendar_session_v1";
 const DEFAULT_TOKEN_TTL_MS = 50 * 60 * 1000;
 
+function getGoogleOAuthErrorMessage(errorCode?: string) {
+  const origin = typeof window !== "undefined" ? window.location.origin : "this origin";
+
+  switch (errorCode) {
+    case "popup_closed_by_user":
+      return "Google sign-in popup was closed before completing login.";
+    case "access_denied":
+      return "Google Calendar permission was denied.";
+    case "origin_mismatch":
+    case "idpiframe_initialization_failed":
+      return `Google OAuth origin mismatch. Add ${origin} to Authorized JavaScript origins in Google Cloud.`;
+    case "invalid_client":
+    case "unauthorized_client":
+      return "Google OAuth client is not authorized for this app origin.";
+    default:
+      return errorCode
+        ? `Google sign-in failed: ${errorCode}.`
+        : "Google sign-in failed. Please try again.";
+  }
+}
+
 function readStoredGoogleSession(): StoredGoogleSession | null {
   try {
     const raw = window.localStorage.getItem(GOOGLE_SESSION_STORAGE_KEY);
@@ -149,6 +170,7 @@ export function GoogleCalendarView() {
   const [events, setEvents] = useState<GoogleCalendarEvent[]>([]);
   const [isInitializing, setIsInitializing] = useState(true);
   const [isLoadingEvents, setIsLoadingEvents] = useState(false);
+  const [hasHydratedEvents, setHasHydratedEvents] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [isComposerOpen, setIsComposerOpen] = useState(false);
@@ -158,6 +180,10 @@ export function GoogleCalendarView() {
   const [selectedEventIds, setSelectedEventIds] = useState<string[]>([]);
   const [syncingTaskIds, setSyncingTaskIds] = useState<string[]>([]);
   const [connectedEmail, setConnectedEmail] = useState<string | null>(null);
+  const [manuallyUnlinkedTaskSignatures, setManuallyUnlinkedTaskSignatures] = useState<Record<string, string>>({});
+
+  const buildTaskSyncSignature = (task: ScheduledTask) =>
+    `${task.title}|${task.description || ""}|${task.scheduledStart}|${task.scheduledEnd}`;
 
   const persistGoogleSession = (token: string, email: string | null, expiresAtOverride?: number) => {
     const existing = readStoredGoogleSession();
@@ -235,9 +261,15 @@ export function GoogleCalendarView() {
       if (task.status === "Completed" || task.status === "Missed") return false;
       if (syncedTaskIds.has(task.id)) return false;
       if (syncingTaskIds.includes(task.id)) return false;
+
+      const blockedSignature = manuallyUnlinkedTaskSignatures[task.id];
+      if (blockedSignature && blockedSignature === buildTaskSyncSignature(task)) {
+        return false;
+      }
+
       return true;
     });
-  }, [state.tasks, syncedTaskIds, syncingTaskIds]);
+  }, [state.tasks, syncedTaskIds, syncingTaskIds, manuallyUnlinkedTaskSignatures]);
 
   const tasksById = useMemo(() => {
     const map = new Map<string, ScheduledTask>();
@@ -246,6 +278,16 @@ export function GoogleCalendarView() {
     }
     return map;
   }, [state.tasks]);
+
+  useEffect(() => {
+    setManuallyUnlinkedTaskSignatures((prev) => {
+      const nextEntries = Object.entries(prev).filter(([taskId]) => tasksById.has(taskId));
+      if (nextEntries.length === Object.keys(prev).length) {
+        return prev;
+      }
+      return Object.fromEntries(nextEntries);
+    });
+  }, [tasksById]);
 
   const linkedEvents = useMemo(() => {
     return events.filter((event) => Boolean(event.extendedProperties?.private?.planifyTaskId));
@@ -357,6 +399,7 @@ export function GoogleCalendarView() {
       const data = await response.json();
       const nextEvents = Array.isArray(data.items) ? data.items : [];
       setEvents(nextEvents);
+      setHasHydratedEvents(true);
       const nextEventIds = new Set(nextEvents.map((event: GoogleCalendarEvent) => event.id));
       setSelectedEventIds((prev) => prev.filter((id) => nextEventIds.has(id)));
     } catch (err: any) {
@@ -365,6 +408,15 @@ export function GoogleCalendarView() {
       setIsLoadingEvents(false);
     }
   };
+
+  useEffect(() => {
+    if (!accessToken) {
+      setHasHydratedEvents(false);
+      return;
+    }
+
+    setHasHydratedEvents(false);
+  }, [accessToken]);
 
   useEffect(() => {
     if (!hasClientId) {
@@ -381,7 +433,7 @@ export function GoogleCalendarView() {
         callback: async (response) => {
           if (response.error || !response.access_token) {
             if (response.error !== "interaction_required") {
-              setError("Google sign-in failed. Please try again.");
+              setError(getGoogleOAuthErrorMessage(response.error));
             }
             setIsLoadingEvents(false);
             return;
@@ -443,7 +495,7 @@ export function GoogleCalendarView() {
   }, [hasClientId]);
 
   useEffect(() => {
-    if (!accessToken || tasksToSync.length === 0 || actionState !== "idle") return;
+    if (!accessToken || !hasHydratedEvents || tasksToSync.length === 0 || actionState !== "idle") return;
 
     const syncTasks = async () => {
       const pendingTaskIds = tasksToSync.map((task) => task.id);
@@ -485,7 +537,7 @@ export function GoogleCalendarView() {
     };
 
     void syncTasks();
-  }, [accessToken, tasksToSync, actionState]);
+  }, [accessToken, hasHydratedEvents, tasksToSync, actionState]);
 
   useEffect(() => {
     if (!accessToken || actionState !== "idle") return;
@@ -551,7 +603,10 @@ export function GoogleCalendarView() {
   }, [accessToken, actionState, linkedEventsToDelete, linkedEventsToUpdate, tasksById]);
 
   const handleConnect = () => {
-    if (!tokenClient) return;
+    if (!tokenClient) {
+      setError("Google client is not initialized. Check VITE_GOOGLE_CLIENT_ID and Google OAuth origins.");
+      return;
+    }
     setError(null);
     setIsLoadingEvents(true);
     tokenClient.requestAccessToken({ prompt: accessToken ? "" : "consent select_account" });
@@ -569,6 +624,7 @@ export function GoogleCalendarView() {
     setDraft(getDefaultDraft());
     setSelectedEventIds([]);
     setConnectedEmail(null);
+    setHasHydratedEvents(false);
     clearStoredGoogleSession();
   };
 
@@ -595,6 +651,16 @@ export function GoogleCalendarView() {
     setActionState("deleting");
     setError(null);
 
+    const linkedTaskSignatures: Record<string, string> = {};
+    for (const eventId of selectedEventIds) {
+      const event = events.find((item) => item.id === eventId);
+      const taskId = event?.extendedProperties?.private?.planifyTaskId;
+      if (!taskId) continue;
+      const task = tasksById.get(taskId);
+      if (!task) continue;
+      linkedTaskSignatures[taskId] = buildTaskSyncSignature(task);
+    }
+
     try {
       const results = await Promise.allSettled(
         selectedEventIds.map((eventId) =>
@@ -608,6 +674,12 @@ export function GoogleCalendarView() {
       );
 
       const failedCount = results.filter((result) => result.status === "rejected").length;
+      if (Object.keys(linkedTaskSignatures).length > 0) {
+        setManuallyUnlinkedTaskSignatures((prev) => ({
+          ...prev,
+          ...linkedTaskSignatures,
+        }));
+      }
       await fetchEvents(accessToken);
       setSelectedEventIds([]);
 
@@ -710,6 +782,16 @@ export function GoogleCalendarView() {
     const shouldDelete = window.confirm("Delete this Google Calendar event?");
     if (!shouldDelete) return;
 
+    const linkedTaskSignatures: Record<string, string> = {};
+    const event = events.find((item) => item.id === eventId);
+    const linkedTaskId = event?.extendedProperties?.private?.planifyTaskId;
+    if (linkedTaskId) {
+      const linkedTask = tasksById.get(linkedTaskId);
+      if (linkedTask) {
+        linkedTaskSignatures[linkedTaskId] = buildTaskSyncSignature(linkedTask);
+      }
+    }
+
     setActionState("deleting");
     setError(null);
     try {
@@ -719,6 +801,12 @@ export function GoogleCalendarView() {
           method: "DELETE",
         },
       );
+      if (Object.keys(linkedTaskSignatures).length > 0) {
+        setManuallyUnlinkedTaskSignatures((prev) => ({
+          ...prev,
+          ...linkedTaskSignatures,
+        }));
+      }
       await fetchEvents(accessToken);
       if (editingEventId === eventId) {
         closeComposer();
