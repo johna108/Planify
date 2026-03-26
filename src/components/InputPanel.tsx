@@ -15,6 +15,32 @@ function toLocalDateTimeInputValue(date: Date) {
   return `${year}-${month}-${day}T${hours}:${minutes}`;
 }
 
+function toLocalIsoWithOffset(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  const seconds = String(date.getSeconds()).padStart(2, "0");
+
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absOffset / 60)).padStart(2, "0");
+  const offsetMins = String(absOffset % 60).padStart(2, "0");
+
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}${sign}${offsetHours}:${offsetMins}`;
+}
+
+function formatUtcOffset(date: Date) {
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? "+" : "-";
+  const absOffset = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absOffset / 60)).padStart(2, "0");
+  const offsetMins = String(absOffset % 60).padStart(2, "0");
+  return `${sign}${offsetHours}:${offsetMins}`;
+}
+
 export function InputPanel() {
   const [input, setInput] = useState("");
   const [showManualForm, setShowManualForm] = useState(false);
@@ -35,8 +61,13 @@ export function InputPanel() {
     setWorkflowStep("Extracting");
 
     try {
-      const currentTime = new Date().toISOString();
-      const extractedData = await processInput(input, currentTime);
+      const now = new Date();
+      const extractedData = await processInput(input, {
+        utcIso: now.toISOString(),
+        localIso: toLocalIsoWithOffset(now),
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+        utcOffset: formatUtcOffset(now),
+      });
       processNewInput(input, extractedData);
       setInput("");
     } catch (error) {

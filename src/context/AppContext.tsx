@@ -415,7 +415,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const hasTimeReferenceInText = (value?: string) => {
     if (!value) return false;
-    return /\b(?:at\s*)?\d{1,2}(?::\d{2})?\s*(am|pm)?\b/i.test(value);
+    return /\b(?:at|by|around|before|after|@)\s*\d{1,2}(?::\d{2})?\s*(am|pm)?\b|\b\d{1,2}:\d{2}\s*(am|pm)?\b|\b\d{1,2}\s*(am|pm)\b/i.test(value);
   };
 
   const normalizeTimeOnlyPreferredStart = (preferred: Date, baseNow: Date) => {
@@ -443,7 +443,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const inferPreferredStartFromText = (text: string, base: Date) => {
     const normalized = text.toLowerCase();
-    const timeMatch = normalized.match(/\b(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+    const timeMatch =
+      normalized.match(/\b(?:at|by|around|before|after|@)\s*(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\b/i) ||
+      normalized.match(/\b(\d{1,2})(?::(\d{2}))\s*(am|pm)\b/i) ||
+      normalized.match(/\b(\d{1,2})\s*(am|pm)\b/i) ||
+      normalized.match(/\b(\d{1,2}):(\d{2})\b/i);
     if (!timeMatch) return null;
 
     const rawHour = Number(timeMatch[1]);
@@ -467,12 +471,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         hour += 12;
       }
     } else {
-      if (!hasMinutes) {
-        return null;
-      }
+      if (hasMinutes) {
+        if (rawHour < 0 || rawHour > 23) {
+          return null;
+        }
+      } else {
+        if (rawHour < 1 || rawHour > 12) {
+          return null;
+        }
 
-      if (rawHour < 0 || rawHour > 23) {
-        return null;
+        hour = rawHour % 12;
+        if (rawHour !== 12) {
+          hour += 12;
+        }
       }
     }
 

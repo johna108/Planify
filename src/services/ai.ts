@@ -20,10 +20,32 @@ export type ExtractedData = {
   tasks: Omit<ExtractedTask, "id">[];
 };
 
-export async function processInput(input: string, currentTime: string): Promise<ExtractedData> {
+export type TimeContext = {
+  utcIso: string;
+  localIso: string;
+  timezone: string;
+  utcOffset: string;
+};
+
+export async function processInput(input: string, timeContext: TimeContext): Promise<ExtractedData> {
   const response = await ai.models.generateContent({
     model: "gemini-3-flash-preview",
-    contents: `Current time is: ${currentTime}. Extract tasks, deadlines, preferred start times, and a summary from the following input. If a task doesn't have an explicit duration, estimate it reasonably (e.g., 30-60 mins). If the user explicitly specifies a start time (e.g., "at 5 PM", "tomorrow 10:30", "from 2 to 3"), put that in preferredStart as an ISO 8601 date string relative to current time. If a deadline is mentioned, convert it to an ISO 8601 date string in deadline.\n\nInput:\n${input}`,
+    contents: `Current time context:
+- Local datetime: ${timeContext.localIso}
+- Timezone: ${timeContext.timezone} (UTC${timeContext.utcOffset})
+- UTC datetime: ${timeContext.utcIso}
+
+Extract tasks, deadlines, preferred start times, and a summary from the user input.
+
+Rules:
+1) Treat the local datetime/timezone above as the source of truth.
+2) If a task doesn't have explicit duration, estimate reasonably (30-60 mins).
+3) If user specifies explicit start time (e.g., "at 5 PM", "tomorrow 10:30", "from 2 to 3"), put it in preferredStart as ISO 8601 including timezone offset.
+4) If a deadline is mentioned, convert to ISO 8601 in deadline including timezone offset.
+5) For ambiguous hour-only phrasing like "at 7" without am/pm, interpret as the next sensible upcoming local time, preferring evening for typical reminder/call language.
+
+Input:
+${input}`,
     config: {
       responseMimeType: "application/json",
       responseSchema: {
